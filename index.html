@@ -1,60 +1,139 @@
 <!doctype html>
 <html lang="pt-br">
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Rastreio</title>
+<title>Rastreio da Loja</title>
 <style>
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#fafafa;color:#222}
-  main{max-width:520px;margin:10vh auto;padding:24px;background:#fff;border:1px solid #eee;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.04)}
-  h1{margin:0 0 12px;font-size:22px}
-  label{display:block;margin:8px 0 6px}
+  :root{--bg:#fafafa;--fg:#222;--card:#fff;--line:#eee}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:var(--bg);color:var(--fg)}
+  main{max-width:640px;margin:8vh auto;padding:24px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.04)}
+  h1{margin:0 0 8px;font-size:22px}
+  .muted{opacity:.75;font-size:.95em}
+  label{display:block;margin:12px 0 6px}
   input{width:100%;padding:12px 14px;font-size:16px;border:1px solid #ccc;border-radius:10px}
   button{margin-top:12px;padding:12px 16px;font-size:16px;border:0;border-radius:10px;cursor:pointer}
-  #out{margin-top:10px;font-size:.95em;word-break:break-all;opacity:.8}
+  .box{padding:16px;border:1px solid var(--line);border-radius:10px;margin-top:12px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .row>div{flex:1 1 220px}
+  code{background:#f1f1f1;border-radius:6px;padding:2px 6px}
+  a.button{display:inline-block;margin-top:10px;padding:10px 14px;border:1px solid #ccc;border-radius:10px;text-decoration:none}
 </style>
+<body>
+<main>
+  <h1>Rastreio</h1>
+  <p class="muted">Cole seu código de rastreio ou abra diretamente com <code>/SEU_CODIGO</code> ou <code>?c=SEU_CODIGO</code>.</p>
+
+  <form id="form" autocomplete="off">
+    <label for="code">Código</label>
+    <input id="code" placeholder="AA123456789BR" maxlength="40">
+    <div class="row">
+      <button id="open">Abrir rastreio</button>
+      <button id="copy" type="button">Copiar link</button>
+    </div>
+  </form>
+
+  <div id="result" class="box" style="display:none"></div>
+  <p id="tip" class="muted"></p>
+</main>
+
 <script>
-(function(){
-  function destino(codigo){
-    // Mude só esta linha se quiser outro serviço:
-    return 'https://www.siterastreio.com.br/' + encodeURIComponent(codigo);
-    // ou: return 'https://www.linkcorreios.com.br/?id=' + encodeURIComponent(codigo);
+/* ====== CONFIGURE AQUI ====== */
+const SHEET_ID = '1XcHAHFos8bvJ8lEyV8jMjFpsEAEfUpQbA5eHY9XZcSM'; // <--- TROQUE
+const SHEET_NAME = 'Rastreio';                      // <--- se renomeou, troque aqui
+/* ====== /CONFIG ====== */
+
+// Validação simples e tolerante (6 a 40 chars, letras/números/hífen)
+function norm(c){ return (c||'').trim().toUpperCase(); }
+function valido(c){ return /^[A-Z0-9-]{6,40}$/.test(c); }
+
+// Monta seu link curto (esta própria página)
+function linkCurto(c){ return location.origin + location.pathname.replace(/index\.html?$/i,'') + encodeURIComponent(c); }
+
+// Lê 1 linha da planilha via Google Visualization API (JSONP, sem CORS)
+function buscarNoSheets(codigo, cb){
+  const tq = encodeURIComponent(`select A,B,C,D,E,F,G where A='${codigo.replace(/'/g,"''")}'`);
+  const base = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?sheet=${encodeURIComponent(SHEET_NAME)}&headers=1&tq=${tq}`;
+  const cbName = 'cb_' + Math.random().toString(36).slice(2);
+  window[cbName] = function(resp){
+    try{
+      if(!resp || resp.status !== 'ok'){ cb(new Error('Erro ao ler a planilha')); return; }
+      const rows = (resp.table && resp.table.rows) || [];
+      if(!rows.length){ cb(null, null); return; }
+      const c = (i)=> (rows[0].c[i] && rows[0].c[i].v) || '';
+      cb(null, {
+        CODIGO: c(0), CLIENTE: c(1), TRANSPORTADORA: c(2),
+        URL_EXTERNA: c(3), STATUS: c(4), ATUALIZADO_EM: c(5), OBS: c(6)
+      });
+    }catch(e){ cb(e); }
+    // limpeza
+    try{ delete window[cbName]; s.remove(); }catch(_){}
+  };
+  const s = document.createElement('script');
+  s.src = base + `&tqx=responseHandler:${cbName}`;
+  s.onerror = ()=>cb(new Error('Falha ao carregar JSONP'));
+  document.body.appendChild(s);
+}
+
+function mostrarDados(d, codigo){
+  const el = document.getElementById('result');
+  const temURL = d && d.URL_EXTERNA && /^https?:\/\//i.test(d.URL_EXTERNA);
+  if(!d){
+    el.innerHTML = `<b>Não encontrei "${codigo}" na planilha.</b><br>
+      Confirme se o código está na coluna <code>CODIGO</code> da aba <code>${SHEET_NAME}</code>.`;
+  }else{
+    el.innerHTML = `
+      <div class="row">
+        <div><b>Código:</b> ${d.CODIGO || codigo}</div>
+        <div><b>Cliente:</b> ${d.CLIENTE || '-'}</div>
+      </div>
+      <div class="row">
+        <div><b>Transportadora:</b> ${d.TRANSPORTADORA || '-'}</div>
+        <div><b>Status:</b> ${d.STATUS || '-'}</div>
+      </div>
+      <div class="row">
+        <div><b>Atualizado em:</b> ${d.ATUALIZADO_EM || '-'}</div>
+        <div><b>Obs.:</b> ${d.OBS || '-'}</div>
+      </div>
+      ${temURL ? `<a class="button" href="${d.URL_EXTERNA}" target="_blank" rel="noopener">Abrir rastreio externo</a>` : ''}
+    `;
   }
-  function gerar(c){
-    c=(c||'').trim().toUpperCase();
-    if(!/^[A-Z0-9]{8,30}$/.test(c)) return null; // valida simples
-    return destino(c);
-  }
-  function abrir(u){ if(u) location.replace(u); }
-  function copiar(u){
-    try{ navigator.clipboard.writeText(u).then(()=>alert('Link copiado:\n'+u),()=>prompt('Copie o link:',u)); }
-    catch(e){ prompt('Copie o link:',u); }
-  }
-  // pega ?c= ou o último pedaço da URL (/CODIGO)
-  const p=location.pathname.replace(/\/+/g,'/').replace(/^\/|\/$/g,'');
-  const seg=p && !/index\.html?$/i.test(p) ? p.split('/').pop() : '';
-  const q=new URL(location.href).searchParams.get('c')||'';
-  const pronto=gerar(q||seg||'');
-  if(pronto){ abrir(pronto); return; }
-  document.addEventListener('DOMContentLoaded',()=>{
-    const i=document.getElementById('code'), go=document.getElementById('go'), cp=document.getElementById('copy'), out=document.getElementById('out');
-    function prev(){ const u=gerar(i.value); out.textContent=u?u:''; }
-    i.addEventListener('input',prev);
-    go.onclick=(e)=>{e.preventDefault(); const u=gerar(i.value); if(!u) return alert('Código inválido. Ex.: AA123456789BR'); abrir(u);};
-    cp.onclick=(e)=>{e.preventDefault(); const u=gerar(i.value); if(!u) return alert('Código inválido.'); copiar(u);};
-    i.focus();
+  el.style.display = 'block';
+  document.getElementById('tip').textContent =
+    'Dica: seu link curto para este código é ' + linkCurto(codigo);
+}
+
+function processar(c){
+  const codigo = norm(c);
+  if(!valido(codigo)){ alert('Código inválido (min 6, máx 40, letras/números/-).'); return; }
+  buscarNoSheets(codigo, function(err, dados){
+    if(err){ alert('Erro: ' + err.message); return; }
+    mostrarDados(dados, codigo);
+    history.replaceState(null, '', linkCurto(codigo)); // mantém a URL curta /CODIGO
   });
+}
+
+(function init(){
+  // pega ?c= ou /CODIGO
+  const url = new URL(location.href);
+  const q = url.searchParams.get('c') || '';
+  let seg = location.pathname.replace(/\/+/g,'/').replace(/^\/|\/$/g,'');
+  seg = seg && !/index\.html?$/i.test(seg) ? seg.split('/').pop() : '';
+  const inicial = norm(q || seg || '');
+  const i = document.getElementById('code');
+  const open = document.getElementById('open');
+  const copy = document.getElementById('copy');
+
+  open.onclick = (e)=>{ e.preventDefault(); processar(i.value); };
+  copy.onclick = (e)=>{
+    e.preventDefault();
+    const c = norm(i.value);
+    if(!valido(c)) return alert('Digite um código válido para copiar o link.');
+    const u = linkCurto(c);
+    try{ navigator.clipboard.writeText(u).then(()=>alert('Link copiado:\n'+u), ()=>prompt('Copie o link:', u)); }
+    catch{ prompt('Copie o link:', u); }
+  };
+
+  if(inicial){ i.value = inicial; processar(inicial); }
+  else{ i.focus(); }
 })();
 </script>
-<body>
-  <main>
-    <h1>Rastreio</h1>
-    <form autocomplete="off">
-      <label for="code">Cole o código de rastreio</label>
-      <input id="code" placeholder="AA123456789BR" maxlength="30">
-      <button id="go">Abrir rastreio</button>
-      <button id="copy" type="button">Copiar link</button>
-      <div id="out"></div>
-      <p style="opacity:.7">Dica: também funciona <code>/SEU_CODIGO</code> e <code>?c=SEU_CODIGO</code>.</p>
-    </form>
-  </main>
-</body>
 </html>
