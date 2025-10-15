@@ -14,8 +14,8 @@
 <script>
 (function(){
   function destino(codigo){
-    // TROCAR AQUI SE QUISER OUTRO SERVIÇO:
-    return 'https://github.com/arbustogames321-hub/' + encodeURIComponent(codigo);
+    // Mude só esta linha se quiser outro serviço:
+    return 'https://www.siterastreio.com.br/' + encodeURIComponent(codigo);
     // ou: return 'https://www.linkcorreios.com.br/?id=' + encodeURIComponent(codigo);
   }
   function gerar(c){
@@ -28,6 +28,7 @@
     try{ navigator.clipboard.writeText(u).then(()=>alert('Link copiado:\n'+u),()=>prompt('Copie o link:',u)); }
     catch(e){ prompt('Copie o link:',u); }
   }
+  // pega ?c= ou o último pedaço da URL (/CODIGO)
   const p=location.pathname.replace(/\/+/g,'/').replace(/^\/|\/$/g,'');
   const seg=p && !/index\.html?$/i.test(p) ? p.split('/').pop() : '';
   const q=new URL(location.href).searchParams.get('c')||'';
@@ -52,7 +53,7 @@
       <button id="go">Abrir rastreio</button>
       <button id="copy" type="button">Copiar link</button>
       <div id="out"></div>
-      <p style="opacity:.7">Dica: também funciona <code>/SEU_CODIGO</code> ou <code>?c=SEU_CODIGO</code>.</p>
+      <p style="opacity:.7">Dica: também funciona <code>/SEU_CODIGO</code> e <code>?c=SEU_CODIGO</code>.</p>
     </form>
   </main>
 </body>
